@@ -1,0 +1,50 @@
+name: Convert VSDX to XML
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '**/*.vsdx'
+
+jobs:
+  convert-vsdx-to-xml:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Find updated .vsdx files
+        id: find_vsdx
+        run: |
+          files=$(git diff --name-only HEAD^ HEAD | grep '\.vsdx$' || echo "")
+          echo "VSDX_FILES=$files" >> $GITHUB_ENV
+
+      - name: Check if .vsdx files found
+        if: env.VSDX_FILES != ''
+        run: |
+          echo "Found .vsdx files: $VSDX_FILES"
+        
+      - name: Spin up Draw.io container
+        if: env.VSDX_FILES != ''
+        uses: docker://jgraph/drawio:latest
+        with:
+          args: "/bin/sh -c 'sleep 60 && exit 0'"  # Small delay to ensure container is ready
+
+      - name: Convert each .vsdx to XML
+        if: env.VSDX_FILES != ''
+        run: |
+          for file in $VSDX_FILES; do
+            xml_output="${file%.vsdx}.xml"
+            curl -X POST -F "file=@$file" http://localhost:8080/export -F "format=xml" -o $xml_output
+          done
+
+      - name: Commit and push XML files
+        if: env.VSDX_FILES != ''
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add *.xml
+          git commit -m "Add XML exports for updated .vsdx files"
+          git push
